@@ -32,7 +32,7 @@
             display: block;
             background: linear-gradient(180deg, #0a0a2e, #16213e, #0f3460);
             border: 2px solid #00ffff;
-            box-shadow: 0 0 50px #00ffff40;
+            box-shadow: 0 0 50px rgba(0, 255, 255, 0.4);
         }
 
         .ui {
@@ -59,7 +59,7 @@
             padding: 30px;
             border-radius: 15px;
             border: 2px solid #00ffff;
-            box-shadow: 0 0 30px #00ffff40;
+            box-shadow: 0 0 30px rgba(0, 255, 255, 0.4);
             z-index: 20;
         }
 
@@ -105,7 +105,7 @@
             padding: 40px;
             border-radius: 15px;
             border: 2px solid #ff6b6b;
-            box-shadow: 0 0 30px #ff6b6b40;
+            box-shadow: 0 0 30px rgba(255, 107, 107, 0.4);
             z-index: 30;
             display: none;
         }
@@ -144,6 +144,28 @@
         .pulse {
             animation: pulse 2s infinite;
         }
+
+        /* Estilos responsivos */
+        @media (max-width: 768px) {
+            .instructions {
+                padding: 20px;
+                margin: 10px;
+            }
+            
+            .instructions h2 {
+                font-size: 24px;
+            }
+            
+            .instructions p {
+                font-size: 14px;
+            }
+            
+            .programming-message {
+                bottom: 10px;
+                padding: 10px;
+                margin: 0 10px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -163,15 +185,15 @@
             <p>💎 Los cristales azules te dan puntos extra</p>
             <p>🔥 Evita los meteoros rojos</p>
             <p>💨 La velocidad aumenta cada nivel</p>
-            <p><em>Este juego demuestra: física, colisiones, partículas, animaciones, sonido y más...</em></p>
-            <button class="start-btn" onclick="startGame()">🚀 INICIAR AVENTURA</button>
+            <p><em>Este juego demuestra: física, colisiones, partículas, animaciones y más...</em></p>
+            <button class="start-btn" onclick="Game.start()">🚀 INICIAR AVENTURA</button>
         </div>
 
         <div class="game-over" id="gameOver">
             <h2>💥 GAME OVER 💥</h2>
             <p>Tu puntuación final: <span id="finalScore">0</span></p>
             <p>Nivel alcanzado: <span id="finalLevel">1</span></p>
-            <button class="start-btn" onclick="restartGame()">🔄 JUGAR DE NUEVO</button>
+            <button class="start-btn" onclick="Game.restart()">🔄 JUGAR DE NUEVO</button>
         </div>
 
         <div class="programming-message pulse">
@@ -182,453 +204,502 @@
     </div>
 
     <script>
-        // Configuración del juego
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
-        
-        // Ajustar canvas al tamaño de la ventana
-        function resizeCanvas() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-        }
-        resizeCanvas();
-        window.addEventListener('resize', resizeCanvas);
+        // Objeto principal del juego para evitar conflictos globales
+        const Game = {
+            canvas: null,
+            ctx: null,
+            gameRunning: false,
+            gameSpeed: 2,
+            score: 0,
+            level: 1,
+            particles: [],
+            stars: [],
+            crystals: [],
+            meteors: [],
+            keys: {},
+            animationFrame: null,
+            
+            player: {
+                x: 100,
+                y: 0,
+                width: 40,
+                height: 30,
+                speed: 5,
+                dy: 0,
+                trail: []
+            },
 
-        // Variables del juego
-        let gameRunning = false;
-        let gameSpeed = 2;
-        let score = 0;
-        let level = 1;
-        let particles = [];
-        let stars = [];
-        let crystals = [];
-        let meteors = [];
+            init: function() {
+                this.canvas = document.getElementById('gameCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.resizeCanvas();
+                this.setupEventListeners();
+            },
 
-        // Jugador (nave espacial)
-        const player = {
-            x: 100,
-            y: canvas.height / 2,
-            width: 40,
-            height: 30,
-            speed: 5,
-            dy: 0,
-            trail: []
+            resizeCanvas: function() {
+                this.canvas.width = window.innerWidth;
+                this.canvas.height = window.innerHeight;
+                this.player.y = this.canvas.height / 2;
+            },
+
+            setupEventListeners: function() {
+                // Event listeners con referencias correctas
+                const handleKeyDown = (e) => {
+                    this.keys[e.code] = true;
+                    e.preventDefault();
+                };
+                
+                const handleKeyUp = (e) => {
+                    this.keys[e.code] = false;
+                    e.preventDefault();
+                };
+                
+                const handleResize = () => {
+                    this.resizeCanvas();
+                };
+
+                document.addEventListener('keydown', handleKeyDown);
+                document.addEventListener('keyup', handleKeyUp);
+                window.addEventListener('resize', handleResize);
+                
+                // Guardar referencias para poder removerlas si es necesario
+                this.eventListeners = {
+                    keydown: handleKeyDown,
+                    keyup: handleKeyUp,
+                    resize: handleResize
+                };
+            },
+
+            // Clase Particle
+            createParticle: function(x, y, color, size = 3, speedX = 0, speedY = 0) {
+                return {
+                    x: x,
+                    y: y,
+                    color: color,
+                    size: Math.max(0.1, size),
+                    speedX: speedX + (Math.random() - 0.5) * 4,
+                    speedY: speedY + (Math.random() - 0.5) * 4,
+                    life: 1.0,
+                    decay: Math.random() * 0.02 + 0.02,
+                    
+                    update: function() {
+                        this.x += this.speedX;
+                        this.y += this.speedY;
+                        this.life -= this.decay;
+                        this.size = Math.max(0.1, this.size * 0.98);
+                    },
+                    
+                    draw: function(ctx) {
+                        if (this.size <= 0.1) return;
+                        ctx.save();
+                        ctx.globalAlpha = Math.max(0, this.life);
+                        ctx.fillStyle = this.color;
+                        ctx.beginPath();
+                        ctx.arc(this.x, this.y, Math.max(0.1, this.size), 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.restore();
+                    }
+                };
+            },
+
+            // Clase GameObject
+            createGameObject: function(x, y, width, height, color, speed) {
+                return {
+                    x: x,
+                    y: y,
+                    width: Math.max(1, width),
+                    height: Math.max(1, height),
+                    color: color,
+                    speed: speed,
+                    angle: 0,
+                    
+                    update: function() {
+                        this.x -= this.speed + Game.gameSpeed;
+                        this.angle += 0.1;
+                    },
+                    
+                    draw: function(ctx) {
+                        ctx.save();
+                        ctx.translate(this.x + this.width/2, this.y + this.height/2);
+                        ctx.rotate(this.angle);
+                        
+                        if (this.color === 'gold') {
+                            this.drawStar(ctx);
+                        } else if (this.color === '#00ffff') {
+                            this.drawCrystal(ctx);
+                        } else {
+                            this.drawMeteor(ctx);
+                        }
+                        ctx.restore();
+                    },
+                    
+                    drawStar: function(ctx) {
+                        ctx.fillStyle = 'gold';
+                        ctx.strokeStyle = '#ffff00';
+                        ctx.lineWidth = 2;
+                        ctx.beginPath();
+                        for (let i = 0; i < 5; i++) {
+                            const angle = (i * Math.PI * 2) / 5 - Math.PI / 2;
+                            const x = Math.cos(angle) * this.width / 2;
+                            const y = Math.sin(angle) * this.height / 2;
+                            if (i === 0) ctx.moveTo(x, y);
+                            else ctx.lineTo(x, y);
+                            
+                            const innerAngle = ((i + 0.5) * Math.PI * 2) / 5 - Math.PI / 2;
+                            const innerX = Math.cos(innerAngle) * this.width / 4;
+                            const innerY = Math.sin(innerAngle) * this.height / 4;
+                            ctx.lineTo(innerX, innerY);
+                        }
+                        ctx.closePath();
+                        ctx.fill();
+                        ctx.stroke();
+                    },
+                    
+                    drawCrystal: function(ctx) {
+                        ctx.fillStyle = '#00ffff';
+                        ctx.strokeStyle = '#ffffff';
+                        ctx.lineWidth = 2;
+                        ctx.beginPath();
+                        ctx.moveTo(0, -this.height/2);
+                        ctx.lineTo(this.width/3, -this.height/6);
+                        ctx.lineTo(this.width/2, this.height/3);
+                        ctx.lineTo(0, this.height/2);
+                        ctx.lineTo(-this.width/2, this.height/3);
+                        ctx.lineTo(-this.width/3, -this.height/6);
+                        ctx.closePath();
+                        ctx.fill();
+                        ctx.stroke();
+                    },
+                    
+                    drawMeteor: function(ctx) {
+                        ctx.fillStyle = '#ff4444';
+                        ctx.strokeStyle = '#ff0000';
+                        ctx.lineWidth = 2;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, Math.max(0.1, this.width/2), 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.stroke();
+                        
+                        // Efectos de fuego
+                        for (let i = 0; i < 3; i++) {
+                            const offset = (Math.sin(Date.now() * 0.01 + i) * 5);
+                            ctx.fillStyle = `hsl(${15 + Math.random() * 30}, 100%, ${50 + Math.random() * 30}%)`;
+                            ctx.beginPath();
+                            ctx.arc(this.width/3 + offset, offset, Math.max(0.1, 3), 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+                    },
+                    
+                    isOffScreen: function() {
+                        return this.x + this.width < 0;
+                    }
+                };
+            },
+
+            drawPlayer: function() {
+                // Estela de la nave
+                this.player.trail.push({
+                    x: this.player.x, 
+                    y: this.player.y + this.player.height/2, 
+                    life: 1.0
+                });
+                
+                if (this.player.trail.length > 10) {
+                    this.player.trail.shift();
+                }
+                
+                for (let i = 0; i < this.player.trail.length; i++) {
+                    const trail = this.player.trail[i];
+                    trail.life -= 0.1;
+                    if (trail.life > 0) {
+                        this.ctx.save();
+                        this.ctx.globalAlpha = trail.life;
+                        this.ctx.fillStyle = '#00ffff';
+                        this.ctx.beginPath();
+                        this.ctx.arc(trail.x, trail.y, Math.max(0.1, trail.life * 5), 0, Math.PI * 2);
+                        this.ctx.fill();
+                        this.ctx.restore();
+                    }
+                }
+
+                // Nave principal
+                this.ctx.save();
+                this.ctx.translate(this.player.x + this.player.width/2, this.player.y + this.player.height/2);
+                
+                // Cuerpo de la nave
+                this.ctx.fillStyle = '#00ffff';
+                this.ctx.beginPath();
+                this.ctx.moveTo(15, 0);
+                this.ctx.lineTo(-15, -10);
+                this.ctx.lineTo(-10, -5);
+                this.ctx.lineTo(-10, 5);
+                this.ctx.lineTo(-15, 10);
+                this.ctx.closePath();
+                this.ctx.fill();
+                
+                // Detalles brillantes
+                this.ctx.fillStyle = '#ffffff';
+                this.ctx.beginPath();
+                this.ctx.arc(5, 0, Math.max(0.1, 3), 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Motor/propulsor
+                this.ctx.fillStyle = '#ff6b6b';
+                this.ctx.beginPath();
+                this.ctx.moveTo(-15, -5);
+                this.ctx.lineTo(-25, -2);
+                this.ctx.lineTo(-25, 2);
+                this.ctx.lineTo(-15, 5);
+                this.ctx.closePath();
+                this.ctx.fill();
+                
+                this.ctx.restore();
+            },
+
+            spawnObjects: function() {
+                if (Math.random() < 0.02) {
+                    this.stars.push(this.createGameObject(
+                        this.canvas.width, 
+                        Math.random() * (this.canvas.height - 100) + 50, 
+                        25, 25, 'gold', 1
+                    ));
+                }
+                if (Math.random() < 0.015) {
+                    this.crystals.push(this.createGameObject(
+                        this.canvas.width, 
+                        Math.random() * (this.canvas.height - 100) + 50, 
+                        20, 20, '#00ffff', 1
+                    ));
+                }
+                if (Math.random() < 0.018) {
+                    this.meteors.push(this.createGameObject(
+                        this.canvas.width, 
+                        Math.random() * (this.canvas.height - 100) + 50, 
+                        30, 30, '#ff4444', 2
+                    ));
+                }
+            },
+
+            checkCollisions: function() {
+                // Colisiones con estrellas
+                for (let i = this.stars.length - 1; i >= 0; i--) {
+                    const star = this.stars[i];
+                    if (this.player.x < star.x + star.width &&
+                        this.player.x + this.player.width > star.x &&
+                        this.player.y < star.y + star.height &&
+                        this.player.y + this.player.height > star.y) {
+                        
+                        // Crear partículas doradas
+                        for (let j = 0; j < 15; j++) {
+                            this.particles.push(this.createParticle(
+                                star.x + star.width/2, 
+                                star.y + star.height/2, 
+                                'gold', 4
+                            ));
+                        }
+                        
+                        this.stars.splice(i, 1);
+                        this.score += 100;
+                        this.updateUI();
+                    }
+                }
+
+                // Colisiones con cristales
+                for (let i = this.crystals.length - 1; i >= 0; i--) {
+                    const crystal = this.crystals[i];
+                    if (this.player.x < crystal.x + crystal.width &&
+                        this.player.x + this.player.width > crystal.x &&
+                        this.player.y < crystal.y + crystal.height &&
+                        this.player.y + this.player.height > crystal.y) {
+                        
+                        // Crear partículas azules
+                        for (let j = 0; j < 20; j++) {
+                            this.particles.push(this.createParticle(
+                                crystal.x + crystal.width/2, 
+                                crystal.y + crystal.height/2, 
+                                '#00ffff', 5
+                            ));
+                        }
+                        
+                        this.crystals.splice(i, 1);
+                        this.score += 250;
+                        this.updateUI();
+                    }
+                }
+
+                // Colisiones con meteoros (game over)
+                for (let i = this.meteors.length - 1; i >= 0; i--) {
+                    const meteor = this.meteors[i];
+                    if (this.player.x < meteor.x + meteor.width &&
+                        this.player.x + this.player.width > meteor.x &&
+                        this.player.y < meteor.y + meteor.height &&
+                        this.player.y + this.player.height > meteor.y) {
+                        
+                        // Crear explosión
+                        for (let j = 0; j < 30; j++) {
+                            this.particles.push(this.createParticle(
+                                this.player.x + this.player.width/2, 
+                                this.player.y + this.player.height/2, 
+                                '#ff4444', 
+                                8,
+                                (Math.random() - 0.5) * 10,
+                                (Math.random() - 0.5) * 10
+                            ));
+                        }
+                        
+                        this.gameOver();
+                        return;
+                    }
+                }
+            },
+
+            updateUI: function() {
+                document.getElementById('scoreValue').textContent = this.score;
+                
+                // Aumentar nivel cada 1000 puntos
+                const newLevel = Math.floor(this.score / 1000) + 1;
+                if (newLevel !== this.level) {
+                    this.level = newLevel;
+                    this.gameSpeed += 0.5;
+                    document.getElementById('levelValue').textContent = this.level;
+                }
+            },
+
+            drawBackground: function() {
+                // Estrellas de fondo
+                this.ctx.fillStyle = '#ffffff';
+                for (let i = 0; i < 100; i++) {
+                    const x = (i * 137.5 + Date.now() * 0.1) % this.canvas.width;
+                    const y = (i * 73.7) % this.canvas.height;
+                    const size = Math.max(0.1, Math.abs(Math.sin(i + Date.now() * 0.005) * 2) + 1);
+                    
+                    this.ctx.save();
+                    this.ctx.globalAlpha = 0.8;
+                    this.ctx.beginPath();
+                    this.ctx.arc(x, y, size, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    this.ctx.restore();
+                }
+            },
+
+            gameLoop: function() {
+                if (!this.gameRunning) return;
+
+                // Limpiar canvas
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                
+                // Dibujar fondo
+                this.drawBackground();
+
+                // Mover jugador
+                if (this.keys['ArrowUp'] && this.player.y > 0) {
+                    this.player.dy = -this.player.speed;
+                } else if (this.keys['ArrowDown'] && this.player.y < this.canvas.height - this.player.height) {
+                    this.player.dy = this.player.speed;
+                } else {
+                    this.player.dy *= 0.8; // Desaceleración suave
+                }
+                
+                this.player.y += this.player.dy;
+
+                // Mantener jugador en pantalla
+                if (this.player.y < 0) this.player.y = 0;
+                if (this.player.y > this.canvas.height - this.player.height) {
+                    this.player.y = this.canvas.height - this.player.height;
+                }
+
+                // Generar objetos
+                this.spawnObjects();
+
+                // Actualizar y dibujar estrellas
+                for (let i = this.stars.length - 1; i >= 0; i--) {
+                    this.stars[i].update();
+                    this.stars[i].draw(this.ctx);
+                    if (this.stars[i].isOffScreen()) {
+                        this.stars.splice(i, 1);
+                    }
+                }
+
+                // Actualizar y dibujar cristales
+                for (let i = this.crystals.length - 1; i >= 0; i--) {
+                    this.crystals[i].update();
+                    this.crystals[i].draw(this.ctx);
+                    if (this.crystals[i].isOffScreen()) {
+                        this.crystals.splice(i, 1);
+                    }
+                }
+
+                // Actualizar y dibujar meteoros
+                for (let i = this.meteors.length - 1; i >= 0; i--) {
+                    this.meteors[i].update();
+                    this.meteors[i].draw(this.ctx);
+                    if (this.meteors[i].isOffScreen()) {
+                        this.meteors.splice(i, 1);
+                    }
+                }
+
+                // Actualizar y dibujar partículas
+                for (let i = this.particles.length - 1; i >= 0; i--) {
+                    this.particles[i].update();
+                    this.particles[i].draw(this.ctx);
+                    if (this.particles[i].life <= 0 || this.particles[i].size <= 0.1) {
+                        this.particles.splice(i, 1);
+                    }
+                }
+
+                // Dibujar jugador
+                this.drawPlayer();
+
+                // Verificar colisiones
+                this.checkCollisions();
+
+                // Continuar el bucle
+                this.animationFrame = requestAnimationFrame(() => this.gameLoop());
+            },
+
+            start: function() {
+                document.getElementById('instructions').style.display = 'none';
+                document.getElementById('gameOver').style.display = 'none';
+                this.gameRunning = true;
+                
+                // Reiniciar valores
+                this.score = 0;
+                this.level = 1;
+                this.gameSpeed = 2;
+                this.player.x = 100;
+                this.player.y = this.canvas.height / 2;
+                this.player.dy = 0;
+                this.player.trail = [];
+                
+                // Limpiar arrays
+                this.particles = [];
+                this.stars = [];
+                this.crystals = [];
+                this.meteors = [];
+                
+                this.updateUI();
+                this.gameLoop();
+            },
+
+            restart: function() {
+                this.start();
+            },
+
+            gameOver: function() {
+                this.gameRunning = false;
+                if (this.animationFrame) {
+                    cancelAnimationFrame(this.animationFrame);
+                }
+                document.getElementById('finalScore').textContent = this.score;
+                document.getElementById('finalLevel').textContent = this.level;
+                document.getElementById('gameOver').style.display = 'block';
+            }
         };
 
-        // Controles
-        const keys = {};
-        document.addEventListener('keydown', (e) => {
-            keys[e.code] = true;
+        // Inicializar el juego cuando la página carga
+        document.addEventListener('DOMContentLoaded', function() {
+            Game.init();
         });
-        document.addEventListener('keyup', (e) => {
-            keys[e.code] = false;
-        });
-
-        // Clase para partículas
-        class Particle {
-            constructor(x, y, color, size = 3, speedX = 0, speedY = 0) {
-                this.x = x;
-                this.y = y;
-                this.color = color;
-                this.size = size;
-                this.speedX = speedX + (Math.random() - 0.5) * 4;
-                this.speedY = speedY + (Math.random() - 0.5) * 4;
-                this.life = 1.0;
-                this.decay = Math.random() * 0.02 + 0.02;
-            }
-
-            update() {
-                this.x += this.speedX;
-                this.y += this.speedY;
-                this.life -= this.decay;
-                this.size *= 0.98;
-            }
-
-            draw() {
-                if (this.size <= 0) return; // Evitar radios negativos
-                ctx.save();
-                ctx.globalAlpha = this.life;
-                ctx.fillStyle = this.color;
-                ctx.beginPath();
-                ctx.arc(this.x, this.y, Math.max(0.1, this.size), 0, Math.PI * 2);
-                ctx.fill();
-                ctx.restore();
-            }
-        }
-
-        // Clase para objetos del juego
-        class GameObject {
-            constructor(x, y, width, height, color, speed) {
-                this.x = x;
-                this.y = y;
-                this.width = width;
-                this.height = height;
-                this.color = color;
-                this.speed = speed;
-                this.angle = 0;
-            }
-
-            update() {
-                this.x -= this.speed + gameSpeed;
-                this.angle += 0.1;
-            }
-
-            draw() {
-                ctx.save();
-                ctx.translate(this.x + this.width/2, this.y + this.height/2);
-                ctx.rotate(this.angle);
-                
-                if (this.color === 'gold') {
-                    // Estrella dorada
-                    this.drawStar();
-                } else if (this.color === '#00ffff') {
-                    // Cristal azul
-                    this.drawCrystal();
-                } else {
-                    // Meteoro
-                    this.drawMeteor();
-                }
-                ctx.restore();
-            }
-
-            drawStar() {
-                ctx.fillStyle = 'gold';
-                ctx.strokeStyle = '#ffff00';
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                for (let i = 0; i < 5; i++) {
-                    const angle = (i * Math.PI * 2) / 5 - Math.PI / 2;
-                    const x = Math.cos(angle) * this.width / 2;
-                    const y = Math.sin(angle) * this.height / 2;
-                    if (i === 0) ctx.moveTo(x, y);
-                    else ctx.lineTo(x, y);
-                    
-                    const innerAngle = ((i + 0.5) * Math.PI * 2) / 5 - Math.PI / 2;
-                    const innerX = Math.cos(innerAngle) * this.width / 4;
-                    const innerY = Math.sin(innerAngle) * this.height / 4;
-                    ctx.lineTo(innerX, innerY);
-                }
-                ctx.closePath();
-                ctx.fill();
-                ctx.stroke();
-            }
-
-            drawCrystal() {
-                ctx.fillStyle = '#00ffff';
-                ctx.strokeStyle = '#ffffff';
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                ctx.moveTo(0, -this.height/2);
-                ctx.lineTo(this.width/3, -this.height/6);
-                ctx.lineTo(this.width/2, this.height/3);
-                ctx.lineTo(0, this.height/2);
-                ctx.lineTo(-this.width/2, this.height/3);
-                ctx.lineTo(-this.width/3, -this.height/6);
-                ctx.closePath();
-                ctx.fill();
-                ctx.stroke();
-            }
-
-            drawMeteor() {
-                ctx.fillStyle = '#ff4444';
-                ctx.strokeStyle = '#ff0000';
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                ctx.arc(0, 0, Math.max(0.1, this.width/2), 0, Math.PI * 2);
-                ctx.fill();
-                ctx.stroke();
-                
-                // Efectos de fuego
-                for (let i = 0; i < 3; i++) {
-                    const offset = (Math.sin(Date.now() * 0.01 + i) * 5);
-                    ctx.fillStyle = `hsl(${15 + Math.random() * 30}, 100%, ${50 + Math.random() * 30}%)`;
-                    ctx.beginPath();
-                    ctx.arc(this.width/3 + offset, offset, Math.max(0.1, 3), 0, Math.PI * 2);
-                    ctx.fill();
-                }
-            }
-
-            isOffScreen() {
-                return this.x + this.width < 0;
-            }
-        }
-
-        // Función para dibujar la nave del jugador
-        function drawPlayer() {
-            // Estela de la nave
-            player.trail.push({x: player.x, y: player.y + player.height/2, life: 1.0});
-            if (player.trail.length > 10) player.trail.shift();
-            
-            for (let i = 0; i < player.trail.length; i++) {
-                const trail = player.trail[i];
-                trail.life -= 0.1;
-                ctx.save();
-                ctx.globalAlpha = trail.life;
-                ctx.fillStyle = '#00ffff';
-                ctx.beginPath();
-                ctx.arc(trail.x, trail.y, Math.max(0.1, trail.life * 5), 0, Math.PI * 2);
-                ctx.fill();
-                ctx.restore();
-            }
-
-            // Nave principal
-            ctx.save();
-            ctx.translate(player.x + player.width/2, player.y + player.height/2);
-            
-            // Cuerpo de la nave
-            ctx.fillStyle = '#00ffff';
-            ctx.beginPath();
-            ctx.moveTo(15, 0);
-            ctx.lineTo(-15, -10);
-            ctx.lineTo(-10, -5);
-            ctx.lineTo(-10, 5);
-            ctx.lineTo(-15, 10);
-            ctx.closePath();
-            ctx.fill();
-            
-            // Detalles brillantes
-            ctx.fillStyle = '#ffffff';
-            ctx.beginPath();
-            ctx.arc(5, 0, Math.max(0.1, 3), 0, Math.PI * 2);
-            ctx.fill();
-            
-            // Motor/propulsor
-            ctx.fillStyle = '#ff6b6b';
-            ctx.beginPath();
-            ctx.moveTo(-15, -5);
-            ctx.lineTo(-25, -2);
-            ctx.lineTo(-25, 2);
-            ctx.lineTo(-15, 5);
-            ctx.closePath();
-            ctx.fill();
-            
-            ctx.restore();
-        }
-
-        // Función para crear objetos aleatorios
-        function spawnObjects() {
-            if (Math.random() < 0.02) {
-                stars.push(new GameObject(canvas.width, Math.random() * (canvas.height - 100) + 50, 25, 25, 'gold', 1));
-            }
-            if (Math.random() < 0.015) {
-                crystals.push(new GameObject(canvas.width, Math.random() * (canvas.height - 100) + 50, 20, 20, '#00ffff', 1));
-            }
-            if (Math.random() < 0.018) {
-                meteors.push(new GameObject(canvas.width, Math.random() * (canvas.height - 100) + 50, 30, 30, '#ff4444', 2));
-            }
-        }
-
-        // Función de detección de colisiones
-        function checkCollisions() {
-            // Colisiones con estrellas
-            for (let i = stars.length - 1; i >= 0; i--) {
-                const star = stars[i];
-                if (player.x < star.x + star.width &&
-                    player.x + player.width > star.x &&
-                    player.y < star.y + star.height &&
-                    player.y + player.height > star.y) {
-                    
-                    // Crear partículas doradas
-                    for (let j = 0; j < 15; j++) {
-                        particles.push(new Particle(star.x + star.width/2, star.y + star.height/2, 'gold', 4));
-                    }
-                    
-                    stars.splice(i, 1);
-                    score += 100;
-                    updateUI();
-                }
-            }
-
-            // Colisiones con cristales
-            for (let i = crystals.length - 1; i >= 0; i--) {
-                const crystal = crystals[i];
-                if (player.x < crystal.x + crystal.width &&
-                    player.x + player.width > crystal.x &&
-                    player.y < crystal.y + crystal.height &&
-                    player.y + player.height > crystal.y) {
-                    
-                    // Crear partículas azules
-                    for (let j = 0; j < 20; j++) {
-                        particles.push(new Particle(crystal.x + crystal.width/2, crystal.y + crystal.height/2, '#00ffff', 5));
-                    }
-                    
-                    crystals.splice(i, 1);
-                    score += 250;
-                    updateUI();
-                }
-            }
-
-            // Colisiones con meteoros (game over)
-            for (let i = meteors.length - 1; i >= 0; i--) {
-                const meteor = meteors[i];
-                if (player.x < meteor.x + meteor.width &&
-                    player.x + player.width > meteor.x &&
-                    player.y < meteor.y + meteor.height &&
-                    player.y + player.height > meteor.y) {
-                    
-                    // Crear explosión
-                    for (let j = 0; j < 30; j++) {
-                        particles.push(new Particle(
-                            player.x + player.width/2, 
-                            player.y + player.height/2, 
-                            '#ff4444', 
-                            8,
-                            (Math.random() - 0.5) * 10,
-                            (Math.random() - 0.5) * 10
-                        ));
-                    }
-                    
-                    gameOver();
-                    return;
-                }
-            }
-        }
-
-        // Función para actualizar la interfaz
-        function updateUI() {
-            document.getElementById('scoreValue').textContent = score;
-            
-            // Aumentar nivel cada 1000 puntos
-            const newLevel = Math.floor(score / 1000) + 1;
-            if (newLevel !== level) {
-                level = newLevel;
-                gameSpeed += 0.5;
-                document.getElementById('levelValue').textContent = level;
-            }
-        }
-
-        // Función para dibujar el fondo estrellado
-        function drawBackground() {
-            // Estrellas de fondo
-            ctx.fillStyle = '#ffffff';
-            for (let i = 0; i < 100; i++) {
-                const x = (i * 137.5 + Date.now() * 0.1) % canvas.width;
-                const y = (i * 73.7) % canvas.height;
-                const size = Math.max(0.1, Math.sin(i + Date.now() * 0.005) * 2 + 1);
-                
-                ctx.save();
-                ctx.globalAlpha = 0.8;
-                ctx.beginPath();
-                ctx.arc(x, y, size, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.restore();
-            }
-        }
-
-        // Bucle principal del juego
-        function gameLoop() {
-            if (!gameRunning) return;
-
-            // Limpiar canvas
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            
-            // Dibujar fondo
-            drawBackground();
-
-            // Mover jugador
-            if (keys['ArrowUp'] && player.y > 0) {
-                player.dy = -player.speed;
-            } else if (keys['ArrowDown'] && player.y < canvas.height - player.height) {
-                player.dy = player.speed;
-            } else {
-                player.dy *= 0.8; // Desaceleración suave
-            }
-            
-            player.y += player.dy;
-
-            // Mantener jugador en pantalla
-            if (player.y < 0) player.y = 0;
-            if (player.y > canvas.height - player.height) player.y = canvas.height - player.height;
-
-            // Generar objetos
-            spawnObjects();
-
-            // Actualizar y dibujar estrellas
-            for (let i = stars.length - 1; i >= 0; i--) {
-                stars[i].update();
-                stars[i].draw();
-                if (stars[i].isOffScreen()) {
-                    stars.splice(i, 1);
-                }
-            }
-
-            // Actualizar y dibujar cristales
-            for (let i = crystals.length - 1; i >= 0; i--) {
-                crystals[i].update();
-                crystals[i].draw();
-                if (crystals[i].isOffScreen()) {
-                    crystals.splice(i, 1);
-                }
-            }
-
-            // Actualizar y dibujar meteoros
-            for (let i = meteors.length - 1; i >= 0; i--) {
-                meteors[i].update();
-                meteors[i].draw();
-                if (meteors[i].isOffScreen()) {
-                    meteors.splice(i, 1);
-                }
-            }
-
-            // Actualizar y dibujar partículas
-            for (let i = particles.length - 1; i >= 0; i--) {
-                particles[i].update();
-                particles[i].draw();
-                if (particles[i].life <= 0 || particles[i].size <= 0) {
-                    particles.splice(i, 1);
-                }
-            }
-
-            // Dibujar jugador
-            drawPlayer();
-
-            // Verificar colisiones
-            checkCollisions();
-
-            // Continuar el bucle
-            requestAnimationFrame(gameLoop);
-        }
-
-        // Función para iniciar el juego
-        function startGame() {
-            document.getElementById('instructions').style.display = 'none';
-            document.getElementById('gameOver').style.display = 'none';
-            gameRunning = true;
-            
-            // Reiniciar valores
-            score = 0;
-            level = 1;
-            gameSpeed = 2;
-            player.x = 100;
-            player.y = canvas.height / 2;
-            player.dy = 0;
-            player.trail = [];
-            
-            // Limpiar arrays
-            particles = [];
-            stars = [];
-            crystals = [];
-            meteors = [];
-            
-            updateUI();
-            gameLoop();
-        }
-
-        // Función para reiniciar el juego
-        function restartGame() {
-            startGame();
-        }
-
-        // Función de game over
-        function gameOver() {
-            gameRunning = false;
-            document.getElementById('finalScore').textContent = score;
-            document.getElementById('finalLevel').textContent = level;
-            document.getElementById('gameOver').style.display = 'block';
-        }
-
-        // Inicializar el juego
-        resizeCanvas();
     </script>
 </body>
 </html>
